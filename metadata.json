@@ -1,0 +1,6 @@
+{
+  "name": "Retro Snake",
+  "description": "Retro pixel art Snake game with dynamic speed scaling, high score tracking, global leaderboards, customizable retro color themes, player match analytics, and anti-cheat verification.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
