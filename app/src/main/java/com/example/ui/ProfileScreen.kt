@@ -1,5 +1,9 @@
 package com.example.ui
 
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
+import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -25,7 +29,9 @@ import androidx.compose.material.icons.filled.AllInclusive
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Headset
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.PlayCircleFilled
 import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Save
@@ -56,15 +62,19 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.config.AdMobConfig
 import com.example.model.RetroTheme
 import com.example.model.RetroThemes
 import com.example.model.WallMode
+import com.example.util.AdLoadStatus
+import com.example.util.AdMobManager
 import com.example.viewmodel.SnakeGameViewModel
 
 @Composable
@@ -74,6 +84,8 @@ fun ProfileScreen(
 ) {
     val theme by viewModel.selectedTheme.collectAsStateWithLifecycle()
     val profile by viewModel.userProfile.collectAsStateWithLifecycle()
+    val adStatus by AdMobManager.adStatus.collectAsStateWithLifecycle()
+    val context = LocalContext.current
 
     var isEditingTag by remember { mutableStateOf(false) }
     var gamerTagInput by remember(profile.gamerTag) { mutableStateOf(profile.gamerTag) }
@@ -503,10 +515,171 @@ fun ProfileScreen(
             }
         }
 
+        // Google AdMob Configuration & Live Testing Card
+        item {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = theme.boardBackground),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(1.dp, theme.foodGolden.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+            ) {
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.PlayCircleFilled,
+                            contentDescription = null,
+                            tint = theme.foodGolden,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Text(
+                            text = "GOOGLE ADMOB STATUS & LIVE TEST",
+                            color = theme.foodGolden,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp
+                        )
+                    }
+
+                    // Credentials Preview
+                    Surface(
+                        color = theme.background.copy(alpha = 0.6f),
+                        shape = RoundedCornerShape(8.dp),
+                        border = BorderStroke(0.5.dp, theme.gridColor),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(10.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(
+                                text = "App ID: ${AdMobConfig.ADMOB_APP_ID.take(30)}...",
+                                color = theme.hudText.copy(alpha = 0.7f),
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 10.sp
+                            )
+                            Text(
+                                text = "Unit ID: ${AdMobConfig.ADMOB_REWARDED_AD_UNIT_ID.take(30)}...",
+                                color = theme.hudText.copy(alpha = 0.7f),
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 10.sp
+                            )
+                        }
+                    }
+
+                    // Live Connection Status
+                    val statusText = when (val s = adStatus) {
+                        is AdLoadStatus.Ready -> if (s.isTestFallback) "✓ Google Ad Ready (Test Fallback: Live ID Pending Fill)" else "✓ Google Live Ad Ready"
+                        is AdLoadStatus.Loading -> "⏳ Connecting to Google AdMob servers..."
+                        is AdLoadStatus.Failed -> "⚠️ Error Code ${s.errorCode}: ${s.message}\n${s.explanation}"
+                        is AdLoadStatus.Showing -> "▶ Fullscreen Video Ad Displaying"
+                        is AdLoadStatus.Idle -> "Initializing / Preloading Ad..."
+                    }
+                    val statusColor = when (adStatus) {
+                        is AdLoadStatus.Ready -> theme.snakeHead
+                        is AdLoadStatus.Loading -> theme.accent
+                        is AdLoadStatus.Failed -> theme.foodGolden
+                        else -> theme.hudText
+                    }
+
+                    Text(
+                        text = statusText,
+                        color = statusColor,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 10.sp,
+                        lineHeight = 14.sp
+                    )
+
+                    // Note on 24-48h activation window for real credentials
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(Color(0xFF1B2838))
+                            .padding(8.dp),
+                        verticalAlignment = Alignment.Top,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Info,
+                            contentDescription = null,
+                            tint = Color(0xFF66C0F4),
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Text(
+                            text = "Why Real Ads Don't Show Immediately: Fresh Ad Units take 24–48 hours for Google to start serving ads (Error Code 3: No Fill). Automatic Fallback is enabled so you can test the video ad immediately without getting blocked.",
+                            color = Color(0xFFDCDEDF),
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 9.sp,
+                            lineHeight = 13.sp
+                        )
+                    }
+
+                    // Action buttons
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = {
+                                val activity = context.findActivity()
+                                if (activity != null) {
+                                    AdMobManager.showRewardedAd(
+                                        activity = activity,
+                                        onRewardEarned = {
+                                            Toast.makeText(context, "🎉 Rewarded ad watched! Reward confirmed.", Toast.LENGTH_SHORT).show()
+                                        },
+                                        onAdDismissed = {
+                                            // dismiss
+                                        },
+                                        onAdUnavailable = { reason ->
+                                            Toast.makeText(context, "Ad not ready: $reason", Toast.LENGTH_LONG).show()
+                                        }
+                                    )
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = theme.foodGolden, contentColor = Color.Black),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("TEST AD NOW", fontFamily = FontFamily.Monospace, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        Button(
+                            onClick = {
+                                AdMobManager.preloadAd(context)
+                                Toast.makeText(context, "Requesting ad from Google AdMob...", Toast.LENGTH_SHORT).show()
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = theme.accent, contentColor = theme.background),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("RELOAD AD", fontFamily = FontFamily.Monospace, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        }
+
         item {
             Spacer(Modifier.height(16.dp))
         }
     }
+}
+
+private fun Context.findActivity(): Activity? {
+    var ctx = this
+    while (ctx is ContextWrapper) {
+        if (ctx is Activity) return ctx
+        ctx = ctx.baseContext
+    }
+    return null
 }
 
 @Composable

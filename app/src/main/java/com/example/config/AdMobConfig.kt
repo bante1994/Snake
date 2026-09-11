@@ -41,6 +41,19 @@ object AdMobConfig {
     const val ADMOB_REWARDED_AD_UNIT_ID: String = "ca-app-pub-3940256099942544/5224354917"
 
     /**
+     * Google's official sample rewarded ad unit for safe testing and fallback
+     */
+    const val GOOGLE_TEST_REWARDED_AD_UNIT_ID: String = "ca-app-pub-3940256099942544/5224354917"
+
+    /**
+     * Automatic Fallback Option:
+     * When set to true, if your real AdMob Ad Unit returns ERROR_CODE_NO_FILL (Code 3)
+     * because your account/ad-unit is new (takes 24-48 hours for Google to serve live inventory),
+     * the game automatically falls back to Google's test ad so you can always see and test the ad!
+     */
+    var FALLBACK_TO_TEST_AD_ON_NO_FILL: Boolean = true
+
+    /**
      * Test Device IDs (for safe testing in emulator/development)
      */
     val TEST_DEVICE_IDS: List<String> = listOf(

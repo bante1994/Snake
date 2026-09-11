@@ -1,3 +1,9 @@
 <resources>
     <string name="app_name">AROOTX</string>
+    <!-- Firebase Fallback identifiers to eliminate FA Missing google_app_id log errors -->
+    <string name="google_app_id" translatable="false">1:832784099395:android:arootxsnake</string>
+    <string name="gcm_defaultSenderId" translatable="false">832784099395</string>
+    <string name="default_web_client_id" translatable="false">832784099395.apps.googleusercontent.com</string>
+    <string name="firebase_database_url" translatable="false">https://arootx-default-rtdb.firebaseio.com</string>
+    <string name="google_api_key" translatable="false">AIzaSyDummyKeyForInitialization</string>
 </resources>

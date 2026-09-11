@@ -1,6 +1,10 @@
 package com.example.ui
 
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
 import android.content.Intent
+import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -76,6 +80,8 @@ import com.example.data.UserProfileEntity
 import com.example.model.GameState
 import com.example.model.RetroTheme
 import com.example.model.WallMode
+import com.example.util.AdLoadStatus
+import com.example.util.AdMobManager
 import com.example.util.AntiCheatEngine
 import com.example.viewmodel.SnakeGameViewModel
 
@@ -87,6 +93,7 @@ fun ArcadeScreen(
     val gameState by viewModel.gameState.collectAsStateWithLifecycle()
     val theme by viewModel.selectedTheme.collectAsStateWithLifecycle()
     val profile by viewModel.userProfile.collectAsStateWithLifecycle()
+    val adStatus by AdMobManager.adStatus.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
     Box(
@@ -180,6 +187,15 @@ fun ArcadeScreen(
             )
         }
 
+fun Context.findActivity(): Activity? {
+    var ctx = this
+    while (ctx is ContextWrapper) {
+        if (ctx is Activity) return ctx
+        ctx = ctx.baseContext
+    }
+    return null
+}
+
         // Game Over Overlay
         AnimatedVisibility(
             visible = gameState.isGameOver && !gameState.isAdShowing,
@@ -187,11 +203,32 @@ fun ArcadeScreen(
             exit = fadeOut(),
             modifier = Modifier.align(Alignment.Center)
         ) {
+            val activity = context.findActivity()
             GameOverDialog(
                 gameState = gameState,
                 theme = theme,
                 profile = profile,
-                onWatchAdToContinue = { viewModel.startWatchAdForRevive() },
+                adStatus = adStatus,
+                onWatchAdToContinue = {
+                    if (activity != null) {
+                        AdMobManager.showRewardedAd(
+                            activity = activity,
+                            onRewardEarned = {
+                                viewModel.completeAdAndRevive()
+                            },
+                            onAdDismissed = {
+                                // Ad dismissed
+                            },
+                            onAdUnavailable = { reason ->
+                                Toast.makeText(context, reason, Toast.LENGTH_LONG).show()
+                                // Fallback: grant revive if ad is still loading or unavailable
+                                viewModel.completeAdAndRevive()
+                            }
+                        )
+                    } else {
+                        viewModel.completeAdAndRevive()
+                    }
+                },
                 onPlayAgain = { viewModel.startGame() },
                 onShareScore = {
                     val tournamentCode = AntiCheatEngine.formatTournamentSeed(gameState.tournamentSeed)
@@ -550,6 +587,7 @@ fun GameOverDialog(
     gameState: GameState,
     theme: RetroTheme,
     profile: UserProfileEntity,
+    adStatus: AdLoadStatus = AdLoadStatus.Idle,
     onWatchAdToContinue: () -> Unit,
     onPlayAgain: () -> Unit,
     onShareScore: () -> Unit,
@@ -740,6 +778,28 @@ fun GameOverDialog(
                             fontFamily = FontFamily.Monospace,
                             fontSize = 10.sp,
                             lineHeight = 14.sp
+                        )
+
+                        val statusBadge = when (adStatus) {
+                            is AdLoadStatus.Ready -> if (adStatus.isTestFallback) "✓ GOOGLE AD READY (Test Fallback: Live ID Pending Fill)" else "✓ LIVE GOOGLE AD READY"
+                            is AdLoadStatus.Loading -> "⏳ DOWNLOADING AD FROM GOOGLE..."
+                            is AdLoadStatus.Failed -> "⚠️ ${adStatus.explanation.take(65)}..."
+                            is AdLoadStatus.Showing -> "▶ DISPLAYING AD..."
+                            is AdLoadStatus.Idle -> "AD PRELOADED"
+                        }
+                        val statusColor = when (adStatus) {
+                            is AdLoadStatus.Ready -> theme.snakeHead
+                            is AdLoadStatus.Loading -> theme.accent
+                            is AdLoadStatus.Failed -> theme.foodGolden
+                            else -> theme.hudText.copy(alpha = 0.7f)
+                        }
+
+                        Text(
+                            text = statusBadge,
+                            color = statusColor,
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold
                         )
 
                         Button(

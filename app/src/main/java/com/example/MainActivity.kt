@@ -22,6 +22,10 @@ class MainActivity : ComponentActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
     enableEdgeToEdge()
+
+    // Initialize Google Mobile Ads SDK with test device configuration
+    com.example.util.AdMobManager.initialize(this)
+
     setContent {
       MyApplicationTheme {
         Surface(modifier = Modifier.fillMaxSize()) {
