@@ -1,33 +1,22 @@
 package com.example.ui
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowLeft
-import androidx.compose.material.icons.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.AllInclusive
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Swipe
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -35,7 +24,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
@@ -47,15 +35,21 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.model.Direction
 import com.example.model.RetroTheme
+import com.example.model.WallMode
 
+/**
+ * Compact, low-profile bottom action bar.
+ * Replaces bulky touchpads and radio panels to maximize playing area.
+ */
 @Composable
-fun ArcadeControls(
-    theme: RetroTheme,
+fun ArcadeBottomBar(
     isPlaying: Boolean,
     isPaused: Boolean,
-    onDirection: (Direction) -> Unit,
+    wallMode: WallMode,
+    theme: RetroTheme,
     onTogglePause: () -> Unit,
     onRestart: () -> Unit,
+    onToggleWallMode: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Row(
@@ -65,18 +59,61 @@ fun ArcadeControls(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Virtual D-Pad
-        DpadController(
-            theme = theme,
-            onDirection = onDirection
-        )
-
-        // Action Buttons (Pause, Restart, Turbo)
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+        // Subtle Swipe Navigation Hint
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            // Pause / Resume
+            Icon(
+                imageVector = Icons.Default.Swipe,
+                contentDescription = null,
+                tint = theme.accent,
+                modifier = Modifier.size(16.dp)
+            )
+            Text(
+                text = "SWIPE: ⬆ ⬇ ⬅ ➡",
+                color = theme.hudText.copy(alpha = 0.75f),
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Bold,
+                fontSize = 11.sp
+            )
+        }
+
+        // Action Controls: WALL MODE, PAUSE, RESTART
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Wall Mode Toggle Button
+            Surface(
+                onClick = onToggleWallMode,
+                shape = RoundedCornerShape(8.dp),
+                color = if (wallMode == WallMode.WALL) theme.accent.copy(alpha = 0.2f) else theme.snakeHead.copy(alpha = 0.2f),
+                border = BorderStroke(1.dp, if (wallMode == WallMode.WALL) theme.accent else theme.snakeHead),
+                modifier = Modifier.testTag("btn_toggle_wall_mode")
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Icon(
+                        imageVector = if (wallMode == WallMode.WALL) Icons.Default.Security else Icons.Default.AllInclusive,
+                        contentDescription = null,
+                        tint = if (wallMode == WallMode.WALL) theme.accent else theme.snakeHead,
+                        modifier = Modifier.size(13.dp)
+                    )
+                    Text(
+                        text = if (wallMode == WallMode.WALL) "WALLS" else "WRAP",
+                        color = if (wallMode == WallMode.WALL) theme.accent else theme.snakeHead,
+                        fontSize = 10.sp,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+
+            // Pause / Resume Button
             ArcadeActionButton(
                 label = if (isPaused) "RESUME" else "PAUSE",
                 icon = if (isPaused) Icons.Default.PlayArrow else Icons.Default.Pause,
@@ -86,109 +123,17 @@ fun ArcadeControls(
                 testTag = "btn_pause_toggle"
             )
 
-            // Quick Restart / Replay
+            // Quick Restart Button
             ArcadeActionButton(
                 label = "RESTART",
                 icon = Icons.Default.Refresh,
-                color = theme.snakeHead,
-                textColor = theme.background,
+                color = theme.boardBackground,
+                textColor = theme.hudText,
+                borderColor = theme.gridColor,
                 onClick = onRestart,
                 testTag = "btn_restart_game"
             )
         }
-    }
-}
-
-@Composable
-fun DpadController(
-    theme: RetroTheme,
-    onDirection: (Direction) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Box(
-        modifier = modifier
-            .size(150.dp)
-            .shadow(6.dp, CircleShape)
-            .clip(CircleShape)
-            .background(theme.boardBackground.copy(alpha = 0.85f))
-            .border(2.dp, theme.gridColor, CircleShape),
-        contentAlignment = Alignment.Center
-    ) {
-        // Up
-        DpadButton(
-            direction = Direction.UP,
-            icon = Icons.Default.KeyboardArrowUp,
-            theme = theme,
-            onClick = { onDirection(Direction.UP) },
-            modifier = Modifier.align(Alignment.TopCenter)
-        )
-        // Down
-        DpadButton(
-            direction = Direction.DOWN,
-            icon = Icons.Default.KeyboardArrowDown,
-            theme = theme,
-            onClick = { onDirection(Direction.DOWN) },
-            modifier = Modifier.align(Alignment.BottomCenter)
-        )
-        // Left
-        DpadButton(
-            direction = Direction.LEFT,
-            icon = Icons.Default.KeyboardArrowLeft,
-            theme = theme,
-            onClick = { onDirection(Direction.LEFT) },
-            modifier = Modifier.align(Alignment.CenterStart)
-        )
-        // Right
-        DpadButton(
-            direction = Direction.RIGHT,
-            icon = Icons.Default.KeyboardArrowRight,
-            theme = theme,
-            onClick = { onDirection(Direction.RIGHT) },
-            modifier = Modifier.align(Alignment.CenterEnd)
-        )
-
-        // Center Pivot
-        Box(
-            modifier = Modifier
-                .size(34.dp)
-                .clip(CircleShape)
-                .background(theme.background)
-                .border(1.dp, theme.accent.copy(alpha = 0.4f), CircleShape)
-        )
-    }
-}
-
-@Composable
-fun DpadButton(
-    direction: Direction,
-    icon: ImageVector,
-    theme: RetroTheme,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
-
-    Box(
-        modifier = modifier
-            .size(48.dp)
-            .scale(if (isPressed) 0.92f else 1f)
-            .clip(RoundedCornerShape(8.dp))
-            .background(if (isPressed) theme.snakeHead else theme.boardBackground.copy(alpha = 0.5f))
-            .clickable(
-                interactionSource = interactionSource,
-                indication = null,
-                onClick = onClick
-            )
-            .testTag("dpad_${direction.name.lowercase()}"),
-        contentAlignment = Alignment.Center
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = "Move ${direction.name}",
-            tint = if (isPressed) theme.background else theme.hudText,
-            modifier = Modifier.size(32.dp)
-        )
     }
 }
 
@@ -198,6 +143,7 @@ fun ArcadeActionButton(
     icon: ImageVector,
     color: Color,
     textColor: Color,
+    borderColor: Color? = null,
     onClick: () -> Unit,
     testTag: String
 ) {
@@ -207,31 +153,31 @@ fun ArcadeActionButton(
     Surface(
         onClick = onClick,
         interactionSource = interactionSource,
-        shape = RoundedCornerShape(10.dp),
+        shape = RoundedCornerShape(8.dp),
         color = if (isPressed) color.copy(alpha = 0.7f) else color,
+        border = borderColor?.let { BorderStroke(1.dp, it) },
         modifier = Modifier
             .scale(if (isPressed) 0.95f else 1f)
             .testTag(testTag)
-            .shadow(4.dp, RoundedCornerShape(10.dp))
+            .shadow(3.dp, RoundedCornerShape(8.dp))
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             Icon(
                 imageVector = icon,
                 contentDescription = label,
                 tint = textColor,
-                modifier = Modifier.size(18.dp)
+                modifier = Modifier.size(14.dp)
             )
             Text(
                 text = label,
                 color = textColor,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold,
-                fontFamily = FontFamily.Monospace,
-                letterSpacing = 1.sp
+                fontSize = 10.sp,
+                fontWeight = FontWeight.ExtraBold,
+                fontFamily = FontFamily.Monospace
             )
         }
     }

@@ -27,8 +27,11 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Headset
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.RecordVoiceOver
+import androidx.compose.material.icons.filled.RestartAlt
+import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Tv
 import androidx.compose.material.icons.filled.Vibration
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material.icons.filled.ZoomOutMap
@@ -71,7 +74,6 @@ fun ProfileScreen(
 ) {
     val theme by viewModel.selectedTheme.collectAsStateWithLifecycle()
     val profile by viewModel.userProfile.collectAsStateWithLifecycle()
-    val voiceState by viewModel.squadVoiceState.collectAsStateWithLifecycle()
 
     var isEditingTag by remember { mutableStateOf(false) }
     var gamerTagInput by remember(profile.gamerTag) { mutableStateOf(profile.gamerTag) }
@@ -103,7 +105,7 @@ fun ProfileScreen(
                     fontWeight = FontWeight.ExtraBold
                 )
                 Text(
-                    text = "Player Handle, Hardware Themes & Squad Comms",
+                    text = "Player Handle, Hardware Themes & Gameplay Preferences",
                     color = theme.hudText.copy(alpha = 0.65f),
                     fontSize = 10.sp,
                     fontFamily = FontFamily.Monospace
@@ -295,87 +297,6 @@ fun ProfileScreen(
                             isSelected = isSelected,
                             onSelect = { viewModel.setTheme(retroTheme) }
                         )
-                    }
-                }
-            }
-        }
-
-        // Integrated Squad Voice Comms & Audio Settings
-        item {
-            Card(
-                colors = CardDefaults.cardColors(containerColor = theme.boardBackground),
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .border(1.dp, theme.gridColor, RoundedCornerShape(12.dp))
-            ) {
-                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Icon(Icons.Default.Headset, contentDescription = null, tint = theme.snakeHead, modifier = Modifier.size(18.dp))
-                        Text(
-                            text = "TEAM VOICE CHAT & COMMS",
-                            color = theme.hudText,
-                            fontFamily = FontFamily.Monospace,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 12.sp
-                        )
-                    }
-
-                    // Radio Squad Members List
-                    Text(
-                        text = "Squad Channel: ${voiceState.channelName}",
-                        color = theme.hudText.copy(alpha = 0.7f),
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 10.sp
-                    )
-
-                    voiceState.onlineSquadMembers.forEach { member ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(theme.background.copy(alpha = 0.5f))
-                                .padding(horizontal = 8.dp, vertical = 5.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = member.tag,
-                                color = if (member.isTalking) theme.snakeHead else theme.hudText,
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 11.sp,
-                                fontWeight = if (member.isTalking) FontWeight.Bold else FontWeight.Normal
-                            )
-                            Text(
-                                text = if (member.isMuted) "MUTED" else "${member.pingMs}ms",
-                                color = theme.hudText.copy(alpha = 0.5f),
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 9.sp
-                            )
-                        }
-                    }
-
-                    // Channel switch buttons
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        listOf("ALPHA-1", "BRAVO-2", "TOURNAMENT").forEach { ch ->
-                            Button(
-                                onClick = { viewModel.switchVoiceChannel(ch) },
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (voiceState.channelName.startsWith(ch)) theme.accent else theme.background,
-                                    contentColor = if (voiceState.channelName.startsWith(ch)) theme.background else theme.hudText
-                                ),
-                                shape = RoundedCornerShape(6.dp),
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Text(ch, fontFamily = FontFamily.Monospace, fontSize = 9.sp, fontWeight = FontWeight.Bold)
-                            }
-                        }
                     }
                 }
             }

@@ -37,5 +37,7 @@ data class UserProfileEntity(
     val totalPlaytimeSeconds: Long = 0L,
     val streakDays: Int = 1,
     val lastPlayedDay: Long = 0L,
-    val integrityPercent: Int = 100
+    val integrityPercent: Int = 100,
+    val adMobAppId: String = com.example.config.AdMobConfig.ADMOB_APP_ID,
+    val adMobRewardedUnitId: String = com.example.config.AdMobConfig.ADMOB_REWARDED_AD_UNIT_ID
 )

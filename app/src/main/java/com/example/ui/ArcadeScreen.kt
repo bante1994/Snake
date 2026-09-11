@@ -24,14 +24,20 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AllInclusive
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
+import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.PlayCircleFilled
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.Tv
 import androidx.compose.material.icons.filled.VolumeMute
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material.icons.filled.ZoomOutMap
@@ -41,12 +47,17 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -76,7 +87,6 @@ fun ArcadeScreen(
     val gameState by viewModel.gameState.collectAsStateWithLifecycle()
     val theme by viewModel.selectedTheme.collectAsStateWithLifecycle()
     val profile by viewModel.userProfile.collectAsStateWithLifecycle()
-    val voiceState by viewModel.squadVoiceState.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
     Box(
@@ -87,11 +97,11 @@ fun ArcadeScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 14.dp, vertical = 8.dp),
+                .padding(horizontal = 8.dp, vertical = 6.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.SpaceBetween
         ) {
-            // HUD Top Header
+            // Compact HUD Header (Score, Level, Best, Sound) - does not overlap playing area
             ArcadeHudHeader(
                 gameState = gameState,
                 theme = theme,
@@ -105,30 +115,11 @@ fun ArcadeScreen(
                 }
             )
 
-            // Wall Mode & Arena Size Selector Bar
-            WallModeToggleBar(
-                currentMode = gameState.wallMode,
-                gridWidth = gameState.gridWidth,
-                gridHeight = gameState.gridHeight,
-                theme = theme,
-                onSelectMode = { mode -> viewModel.setWallMode(mode) }
-            )
-
-            // Dynamic Speed & Multiplier Bar
-            SpeedLevelIndicator(
-                speedLevel = gameState.speedLevel,
-                gridWidth = gameState.gridWidth,
-                gridHeight = gameState.gridHeight,
-                multiplier = gameState.scoreMultiplier,
-                isGoldenActive = gameState.food.isGolden,
-                goldenExpiresAt = gameState.food.expiresAtMs,
-                theme = theme
-            )
-
-            // Game Play Canvas
+            // Maximized Game Play Canvas (Full height, unobstructed visibility for snake & food)
             Box(
                 modifier = Modifier
-                    .weight(1f, fill = false)
+                    .weight(1f)
+                    .fillMaxWidth()
                     .padding(vertical = 4.dp),
                 contentAlignment = Alignment.Center
             ) {
@@ -137,7 +128,7 @@ fun ArcadeScreen(
                     theme = theme,
                     scanlinesEnabled = profile.scanlinesEnabled,
                     onDirectionChange = { dir -> viewModel.changeDirection(dir) },
-                    modifier = Modifier.padding(2.dp)
+                    modifier = Modifier.fillMaxSize()
                 )
 
                 // Start overlay if not yet started
@@ -174,27 +165,24 @@ fun ArcadeScreen(
                 }
             }
 
-            // Compact Integrated Voice Radio Bar
-            SquadRadioWidget(
-                voiceState = voiceState,
-                theme = theme,
-                onToggleMic = { viewModel.toggleVoiceMic() }
-            )
-
-            // Tactile D-Pad and Action Buttons
-            ArcadeControls(
-                theme = theme,
+            // Minimal, low-profile bottom action bar (Replaces bulky controls & radios)
+            ArcadeBottomBar(
                 isPlaying = gameState.isPlaying,
                 isPaused = gameState.isPaused,
-                onDirection = { dir -> viewModel.changeDirection(dir) },
+                wallMode = gameState.wallMode,
+                theme = theme,
                 onTogglePause = { viewModel.togglePause() },
-                onRestart = { viewModel.startGame() }
+                onRestart = { viewModel.startGame() },
+                onToggleWallMode = {
+                    val nextMode = if (gameState.wallMode == WallMode.WALL) com.example.model.WallMode.WALL_LESS else com.example.model.WallMode.WALL
+                    viewModel.setWallMode(nextMode)
+                }
             )
         }
 
         // Game Over Overlay
         AnimatedVisibility(
-            visible = gameState.isGameOver,
+            visible = gameState.isGameOver && !gameState.isAdShowing,
             enter = fadeIn() + slideInVertically(initialOffsetY = { it / 2 }),
             exit = fadeOut(),
             modifier = Modifier.align(Alignment.Center)
@@ -203,6 +191,7 @@ fun ArcadeScreen(
                 gameState = gameState,
                 theme = theme,
                 profile = profile,
+                onWatchAdToContinue = { viewModel.startWatchAdForRevive() },
                 onPlayAgain = { viewModel.startGame() },
                 onShareScore = {
                     val tournamentCode = AntiCheatEngine.formatTournamentSeed(gameState.tournamentSeed)
@@ -220,6 +209,22 @@ fun ArcadeScreen(
                 }
             )
         }
+
+        // Rewarded Ad Revive Modal
+        AnimatedVisibility(
+            visible = gameState.isAdShowing,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier.align(Alignment.Center)
+        ) {
+            RewardedAdModal(
+                gameState = gameState,
+                profile = profile,
+                theme = theme,
+                onAdCompleted = { viewModel.completeAdAndRevive() },
+                onSkipAd = { viewModel.dismissAdWithoutRevive() }
+            )
+        }
     }
 }
 
@@ -231,357 +236,128 @@ fun ArcadeHudHeader(
     onToggleSound: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Row(
+    Surface(
+        color = theme.boardBackground.copy(alpha = 0.95f),
+        shape = RoundedCornerShape(10.dp),
+        border = BorderStroke(1.dp, theme.gridColor),
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 4.dp, vertical = 2.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
+            .padding(horizontal = 2.dp, vertical = 2.dp)
     ) {
-        // Current Score
-        Column {
-            Text(
-                text = "SCORE",
-                color = theme.hudText.copy(alpha = 0.7f),
-                fontSize = 11.sp,
-                fontFamily = FontFamily.Monospace,
-                fontWeight = FontWeight.Bold
-            )
-            Text(
-                text = "%05d".format(gameState.score),
-                color = theme.hudText,
-                fontSize = 26.sp,
-                fontFamily = FontFamily.Monospace,
-                fontWeight = FontWeight.ExtraBold
-            )
-        }
-
-        // High Score
         Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
             modifier = Modifier
-                .clip(RoundedCornerShape(8.dp))
-                .background(theme.boardBackground.copy(alpha = 0.8f))
-                .border(1.dp, theme.accent.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
-                .padding(horizontal = 10.dp, vertical = 4.dp)
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(
-                imageVector = Icons.Default.EmojiEvents,
-                contentDescription = "High Score",
-                tint = theme.foodGolden,
-                modifier = Modifier.size(18.dp)
-            )
+            // Left: Current Score
             Column {
                 Text(
-                    text = "BEST",
-                    color = theme.hudText.copy(alpha = 0.7f),
+                    text = "SCORE",
+                    color = theme.hudText.copy(alpha = 0.65f),
                     fontSize = 9.sp,
-                    fontFamily = FontFamily.Monospace
-                )
-                Text(
-                    text = "%05d".format(gameState.highScore),
-                    color = theme.foodGolden,
-                    fontSize = 14.sp,
                     fontFamily = FontFamily.Monospace,
                     fontWeight = FontWeight.Bold
                 )
-            }
-        }
-
-        // Sound Toggle
-        IconButton(
-            onClick = onToggleSound,
-            modifier = Modifier.testTag("btn_toggle_sound")
-        ) {
-            Icon(
-                imageVector = if (soundEnabled) Icons.Default.VolumeUp else Icons.Default.VolumeMute,
-                contentDescription = if (soundEnabled) "Mute Audio" else "Unmute Audio",
-                tint = theme.hudText,
-                modifier = Modifier.size(24.dp)
-            )
-        }
-    }
-}
-
-@Composable
-fun WallModeToggleBar(
-    currentMode: WallMode,
-    gridWidth: Int,
-    gridHeight: Int,
-    theme: RetroTheme,
-    onSelectMode: (WallMode) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
-            .background(theme.boardBackground.copy(alpha = 0.88f))
-            .border(1.dp, theme.gridColor, RoundedCornerShape(8.dp))
-            .padding(horizontal = 6.dp, vertical = 4.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            val isWall = (currentMode == WallMode.WALL)
-            Surface(
-                shape = RoundedCornerShape(6.dp),
-                color = if (isWall) theme.accent else Color.Transparent,
-                border = if (isWall) null else BorderStroke(0.5.dp, theme.gridColor),
-                modifier = Modifier
-                    .clickable { onSelectMode(WallMode.WALL) }
-                    .testTag("btn_mode_wall")
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Security,
-                        contentDescription = null,
-                        tint = if (isWall) Color.Black else theme.hudText.copy(alpha = 0.7f),
-                        modifier = Modifier.size(13.dp)
-                    )
-                    Text(
-                        text = "WALLS",
-                        color = if (isWall) Color.Black else theme.hudText.copy(alpha = 0.7f),
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 10.sp
-                    )
-                }
-            }
-
-            val isWallLess = (currentMode == WallMode.WALL_LESS)
-            Surface(
-                shape = RoundedCornerShape(6.dp),
-                color = if (isWallLess) theme.snakeHead else Color.Transparent,
-                border = if (isWallLess) null else BorderStroke(0.5.dp, theme.gridColor),
-                modifier = Modifier
-                    .clickable { onSelectMode(WallMode.WALL_LESS) }
-                    .testTag("btn_mode_wallless")
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.AllInclusive,
-                        contentDescription = null,
-                        tint = if (isWallLess) Color.Black else theme.hudText.copy(alpha = 0.7f),
-                        modifier = Modifier.size(13.dp)
-                    )
-                    Text(
-                        text = "WALL-LESS",
-                        color = if (isWallLess) Color.Black else theme.hudText.copy(alpha = 0.7f),
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 10.sp
-                    )
-                }
-            }
-        }
-
-        // Screen / Arena Dimension Indicator
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-            modifier = Modifier
-                .clip(RoundedCornerShape(4.dp))
-                .background(theme.background.copy(alpha = 0.5f))
-                .padding(horizontal = 6.dp, vertical = 3.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Default.ZoomOutMap,
-                contentDescription = null,
-                tint = theme.foodGolden,
-                modifier = Modifier.size(12.dp)
-            )
-            Text(
-                text = "SCREEN ${gridWidth}x${gridHeight}",
-                color = theme.foodGolden,
-                fontFamily = FontFamily.Monospace,
-                fontWeight = FontWeight.Bold,
-                fontSize = 9.sp
-            )
-        }
-    }
-}
-
-@Composable
-fun SpeedLevelIndicator(
-    speedLevel: Int,
-    gridWidth: Int,
-    gridHeight: Int,
-    multiplier: Float,
-    isGoldenActive: Boolean,
-    goldenExpiresAt: Long,
-    theme: RetroTheme,
-    modifier: Modifier = Modifier
-) {
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = 4.dp, vertical = 2.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        // Speed Level with bars
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Default.Speed,
-                contentDescription = "Speed Level",
-                tint = theme.snakeHead,
-                modifier = Modifier.size(16.dp)
-            )
-            Text(
-                text = "LVL $speedLevel",
-                color = theme.hudText,
-                fontFamily = FontFamily.Monospace,
-                fontWeight = FontWeight.Bold,
-                fontSize = 11.sp
-            )
-
-            // Speed gauge blocks
-            Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                for (i in 1..6) {
-                    val isActive = i <= speedLevel
-                    Box(
-                        modifier = Modifier
-                            .width(8.dp)
-                            .height(10.dp)
-                            .clip(RoundedCornerShape(2.dp))
-                            .background(if (isActive) theme.snakeHead else theme.boardBackground)
-                            .border(0.5.dp, theme.gridColor, RoundedCornerShape(2.dp))
-                    )
-                }
-            }
-        }
-
-        // Golden Apple or Multiplier Badge
-        if (isGoldenActive) {
-            val secondsLeft = ((goldenExpiresAt - System.currentTimeMillis()).coerceAtLeast(0L) / 1000).toInt()
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(theme.foodGolden)
-                    .padding(horizontal = 8.dp, vertical = 2.dp)
-            ) {
                 Text(
-                    text = "GOLDEN +50 (${secondsLeft}s)",
-                    color = Color.Black,
-                    fontFamily = FontFamily.Monospace,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 10.sp
-                )
-            }
-        } else {
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(theme.boardBackground)
-                    .border(1.dp, theme.accent.copy(alpha = 0.5f), RoundedCornerShape(6.dp))
-                    .padding(horizontal = 8.dp, vertical = 2.dp)
-            ) {
-                Text(
-                    text = "${"%.1f".format(multiplier)}x PTS",
-                    color = theme.accent,
-                    fontFamily = FontFamily.Monospace,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 10.sp
-                )
-            }
-        }
-    }
-}
-
-@Composable
-fun SquadRadioWidget(
-    voiceState: SquadVoiceState,
-    theme: RetroTheme,
-    onToggleMic: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
-            .background(theme.boardBackground.copy(alpha = 0.85f))
-            .border(1.dp, theme.gridColor, RoundedCornerShape(8.dp))
-            .padding(horizontal = 12.dp, vertical = 6.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            // Radio Waveform bars
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(2.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                for (vol in voiceState.volumeLevels) {
-                    val barHeight = (vol * 16).coerceIn(4f, 16f).dp
-                    Box(
-                        modifier = Modifier
-                            .width(3.dp)
-                            .height(barHeight)
-                            .background(if (!voiceState.isMicMuted) theme.snakeHead else Color.Gray)
-                    )
-                }
-            }
-
-            Column {
-                Text(
-                    text = "TEAM RADIO",
-                    color = theme.hudText.copy(alpha = 0.6f),
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 9.sp
-                )
-                Text(
-                    text = voiceState.channelName,
+                    text = "%05d".format(gameState.score),
                     color = theme.hudText,
+                    fontSize = 22.sp,
                     fontFamily = FontFamily.Monospace,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 11.sp
+                    fontWeight = FontWeight.ExtraBold
                 )
             }
-        }
 
-        // Mic Toggle
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-            modifier = Modifier
-                .clip(RoundedCornerShape(6.dp))
-                .background(if (voiceState.isMicMuted) Color(0xFF552222) else Color(0xFF0F3B66))
-                .clickable(onClick = onToggleMic)
-                .padding(horizontal = 8.dp, vertical = 4.dp)
-                .testTag("btn_radio_mic")
-        ) {
-            Icon(
-                imageVector = if (voiceState.isMicMuted) Icons.Default.MicOff else Icons.Default.Mic,
-                contentDescription = "Squad Radio Mic",
-                tint = Color.White,
-                modifier = Modifier.size(14.dp)
-            )
-            Text(
-                text = if (voiceState.isMicMuted) "MUTED" else "LIVE",
-                color = Color.White,
-                fontFamily = FontFamily.Monospace,
-                fontWeight = FontWeight.Bold,
-                fontSize = 10.sp
-            )
+            // Center: Speed Level & Multiplier / Golden or Shield status
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        text = "LVL ${gameState.speedLevel}",
+                        color = theme.accent,
+                        fontSize = 13.sp,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.ExtraBold
+                    )
+                    Text(
+                        text = "• ${"%.1f".format(gameState.scoreMultiplier)}x",
+                        color = theme.snakeHead,
+                        fontSize = 11.sp,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                if (gameState.food.isGolden) {
+                    val goldenSecs = maxOf(0, ((gameState.food.expiresAtMs - System.currentTimeMillis() + 999) / 1000).toInt())
+                    Text(
+                        text = "GOLDEN +40 (${goldenSecs}s)",
+                        color = theme.foodGolden,
+                        fontSize = 9.sp,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.ExtraBold
+                    )
+                } else {
+                    val isShield = gameState.invulnerableUntilMs > System.currentTimeMillis()
+                    if (isShield) {
+                        val shieldSecs = ((gameState.invulnerableUntilMs - System.currentTimeMillis() + 999) / 1000).toInt()
+                        Text(
+                            text = "SHIELD: ${shieldSecs}s",
+                            color = theme.accent,
+                            fontSize = 9.sp,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold
+                        )
+                    } else {
+                        Text(
+                            text = if (gameState.wallMode == WallMode.WALL) "WALLS ACTIVE" else "WALLS WRAP",
+                            color = theme.hudText.copy(alpha = 0.6f),
+                            fontSize = 9.sp,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    }
+                }
+            }
+
+            // Right: Best High Score & Sound Toggle
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(
+                        text = "BEST",
+                        color = theme.foodGolden.copy(alpha = 0.7f),
+                        fontSize = 9.sp,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "%05d".format(gameState.highScore),
+                        color = theme.foodGolden,
+                        fontSize = 15.sp,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                IconButton(
+                    onClick = onToggleSound,
+                    modifier = Modifier
+                        .size(32.dp)
+                        .testTag("btn_toggle_sound")
+                ) {
+                    Icon(
+                        imageVector = if (soundEnabled) Icons.Default.VolumeUp else Icons.Default.VolumeMute,
+                        contentDescription = if (soundEnabled) "Mute Audio" else "Unmute Audio",
+                        tint = if (soundEnabled) theme.snakeHead else theme.hudText.copy(alpha = 0.45f),
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
         }
     }
 }
@@ -774,6 +550,7 @@ fun GameOverDialog(
     gameState: GameState,
     theme: RetroTheme,
     profile: UserProfileEntity,
+    onWatchAdToContinue: () -> Unit,
     onPlayAgain: () -> Unit,
     onShareScore: () -> Unit,
     modifier: Modifier = Modifier
@@ -918,6 +695,77 @@ fun GameOverDialog(
                 )
             }
 
+            // Rewarded Ad Revive Option (Continue with last score from where died)
+            if (gameState.canReviveWithAd) {
+                Surface(
+                    color = Color(0xFF102820),
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.5.dp, theme.foodGolden),
+                    shadowElevation = 8.dp,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.PlayCircleFilled,
+                                contentDescription = null,
+                                tint = theme.foodGolden,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Text(
+                                text = "WATCH AD TO CONTINUE",
+                                color = theme.foodGolden,
+                                fontFamily = FontFamily.Monospace,
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 12.sp
+                            )
+                            Spacer(Modifier.weight(1f))
+                            Text(
+                                text = "${5 - gameState.revivesUsed} left",
+                                color = theme.hudText.copy(alpha = 0.7f),
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 10.sp
+                            )
+                        }
+
+                        Text(
+                            text = "Revive exactly where you crashed with your last score (${gameState.score} PTS) and +3.5s cyber shield!",
+                            color = theme.hudText.copy(alpha = 0.9f),
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 10.sp,
+                            lineHeight = 14.sp
+                        )
+
+                        Button(
+                            onClick = onWatchAdToContinue,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = theme.foodGolden,
+                                contentColor = Color.Black
+                            ),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("btn_watch_ad_revive")
+                        ) {
+                            Icon(Icons.Default.Movie, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                text = "REVIVE NOW (${gameState.score} PTS)",
+                                fontFamily = FontFamily.Monospace,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp
+                            )
+                        }
+                    }
+                }
+            }
+
             // Action buttons
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -950,6 +798,206 @@ fun GameOverDialog(
                     Spacer(Modifier.width(6.dp))
                     Text("REPLAY", fontFamily = FontFamily.Monospace, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                 }
+            }
+        }
+    }
+}
+
+@Composable
+fun RewardedAdModal(
+    gameState: GameState,
+    profile: UserProfileEntity,
+    theme: RetroTheme,
+    onAdCompleted: () -> Unit,
+    onSkipAd: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF091218)),
+        shape = RoundedCornerShape(16.dp),
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(16.dp)
+            .border(2.dp, theme.accent, RoundedCornerShape(16.dp))
+            .shadow(24.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(18.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            // Header with Ad Mob Tag & Close/Skip
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Tv,
+                        contentDescription = null,
+                        tint = theme.foodGolden,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Text(
+                        text = "ADMOB REWARDED AD",
+                        color = theme.foodGolden,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.ExtraBold,
+                        fontSize = 12.sp
+                    )
+                }
+
+                IconButton(
+                    onClick = onSkipAd,
+                    modifier = Modifier
+                        .size(28.dp)
+                        .testTag("btn_skip_ad")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "Skip Ad",
+                        tint = theme.hudText.copy(alpha = 0.7f),
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+
+            // Backend Configured Status Badge
+            Surface(
+                color = theme.boardBackground,
+                shape = RoundedCornerShape(8.dp),
+                border = BorderStroke(0.8.dp, theme.foodGolden.copy(alpha = 0.4f)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "SPONSORED REVIVE STREAM",
+                        color = theme.foodGolden,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "REWARD: +3.5S SHIELD",
+                        color = theme.accent,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+
+            // Simulated Video / Commercial Player Frame
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(130.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(Color(0xFF03080E))
+                    .border(1.dp, theme.snakeHead.copy(alpha = 0.5f), RoundedCornerShape(10.dp)),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Movie,
+                        contentDescription = null,
+                        tint = theme.snakeHead,
+                        modifier = Modifier.size(36.dp)
+                    )
+                    Text(
+                        text = "RETRO CYBER REWARD ARCADE",
+                        color = theme.hudText,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp
+                    )
+                    Text(
+                        text = "Revive with score: ${gameState.score} • Level ${gameState.speedLevel}",
+                        color = theme.hudText.copy(alpha = 0.7f),
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 9.sp
+                    )
+                }
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.White.copy(alpha = 0.03f))
+                )
+            }
+
+            // Progress bar
+            val progress = ((5 - gameState.adCountdownSeconds).coerceIn(0, 5)) / 5f
+            LinearProgressIndicator(
+                progress = { progress },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(8.dp)
+                    .clip(RoundedCornerShape(4.dp)),
+                color = if (gameState.adCountdownSeconds == 0) theme.snakeHead else theme.foodGolden,
+                trackColor = theme.boardBackground
+            )
+
+            // Timer / Reward Ready Status
+            if (gameState.adCountdownSeconds > 0) {
+                Text(
+                    text = "REWARD UNLOCKS IN ${gameState.adCountdownSeconds} SECONDS...",
+                    color = theme.hudText,
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 11.sp
+                )
+            } else {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        text = "✓ AD COMPLETED • REWARD UNLOCKED",
+                        color = theme.snakeHead,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.ExtraBold,
+                        fontSize = 11.sp
+                    )
+                }
+            }
+
+            // Action Button
+            Button(
+                onClick = onAdCompleted,
+                enabled = (gameState.adCountdownSeconds == 0),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = theme.snakeHead,
+                    contentColor = Color.Black,
+                    disabledContainerColor = theme.boardBackground,
+                    disabledContentColor = theme.hudText.copy(alpha = 0.4f)
+                ),
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("btn_claim_revive_reward")
+            ) {
+                Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = if (gameState.adCountdownSeconds == 0) "RESUME FROM WHERE YOU CRASHED (${gameState.score} PTS)" else "PLAYING SPONSOR AD...",
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 11.sp
+                )
             }
         }
     }

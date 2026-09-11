@@ -54,5 +54,10 @@ data class GameState(
     val tournamentSeed: Long = 424242L,
     val antiCheatToken: String = "",
     val antiCheatVerified: Boolean = true,
-    val levelUpAnnouncement: String? = null
+    val levelUpAnnouncement: String? = null,
+    val isAdShowing: Boolean = false,
+    val adCountdownSeconds: Int = 5,
+    val canReviveWithAd: Boolean = true,
+    val revivesUsed: Int = 0,
+    val invulnerableUntilMs: Long = 0L
 )

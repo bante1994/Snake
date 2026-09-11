@@ -44,4 +44,15 @@ class ExampleRobolectricTest {
     assertTrue(report.isClean)
     assertEquals("VERIFIED_CLEAN", report.integrityRating)
   }
+
+  @Test
+  fun `wall modes have correct properties and descriptions`() {
+    val wall = com.example.model.WallMode.WALL
+    val wallless = com.example.model.WallMode.WALL_LESS
+
+    assertEquals("WALLS", wall.label)
+    assertEquals("WALL-LESS", wallless.label)
+    assertTrue(wall.description.contains("fatal") || wall.description.contains("Fatal"))
+    assertTrue(wallless.description.contains("wrap") || wallless.description.contains("Wrap"))
+  }
 }

@@ -39,17 +39,31 @@ class ExampleUnitTest {
   fun wallMode_labelsAndDescriptions_areValid() {
     assertEquals("WALLS", WallMode.WALL.label)
     assertEquals("WALL-LESS", WallMode.WALL_LESS.label)
-    assertTrue(WallMode.WALL.description.contains("Fatal"))
-    assertTrue(WallMode.WALL_LESS.description.contains("wrap"))
+    assertTrue(WallMode.WALL.description.contains("fatal") || WallMode.WALL.description.contains("Fatal"))
+    assertTrue(WallMode.WALL_LESS.description.contains("wrap") || WallMode.WALL_LESS.description.contains("Wrap"))
   }
 
   @Test
   fun antiCheatEngine_legitimacyCheck_validatesLegitimateGame() {
-    val duration = 30L
+    val duration = 30
     val apples = 5
     val score = 50
-    val token = AntiCheatEngine.generateVerificationToken("PLAYER1", score, apples, duration)
-    val isLegit = AntiCheatEngine.isScoreLegitimate("PLAYER1", score, apples, duration, token)
-    assertTrue(isLegit)
+    val moves = 35
+    val token = AntiCheatEngine.generateVerificationToken(
+      score = score,
+      applesEaten = apples,
+      goldenApplesEaten = 0,
+      movesCount = moves,
+      durationSeconds = duration,
+      seed = 42L
+    )
+    assertNotNull(token)
+    val report = AntiCheatEngine.isScoreLegitimate(
+      score = score,
+      applesEaten = apples,
+      movesCount = moves,
+      durationSeconds = duration
+    )
+    assertTrue(report.isClean)
   }
 }

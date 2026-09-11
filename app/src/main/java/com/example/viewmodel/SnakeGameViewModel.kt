@@ -11,6 +11,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.audio.RetroAudioSynthesizer
+import com.example.audio.TeamAudioManager
+import com.example.audio.TeamCallout
+import com.example.audio.TeamCalloutType
 import com.example.data.AppDatabase
 import com.example.data.DailyRetentionChallenge
 import com.example.data.LeaderboardEntry
@@ -49,6 +52,14 @@ class SnakeGameViewModel(application: Application) : AndroidViewModel(applicatio
     private val profileDao = database.profileDao()
     private val leaderboardRepo = LeaderboardRepository(matchDao, profileDao)
     val audioSynthesizer = RetroAudioSynthesizer()
+    val teamAudioManager = TeamAudioManager(application, audioSynthesizer, viewModelScope)
+
+    val teamAudioEnabled: StateFlow<Boolean> = teamAudioManager.teamAudioEnabled
+    val activeSpeaker: StateFlow<String?> = teamAudioManager.activeSpeaker
+    val latestCallout: StateFlow<TeamCallout?> = teamAudioManager.latestCallout
+    val recentCallouts: StateFlow<List<TeamCallout>> = teamAudioManager.recentCallouts
+    val lastGestureDirection = MutableStateFlow<Direction?>(null)
+    private var clearGestureJob: Job? = null
 
     private val vibrator: Vibrator? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
         val vibratorManager = application.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager
@@ -135,7 +146,9 @@ class SnakeGameViewModel(application: Application) : AndroidViewModel(applicatio
     val dailyChallenges: StateFlow<List<DailyRetentionChallenge>> = _dailyChallenges.asStateFlow()
 
     private var gameJob: Job? = null
+    private var adCountdownJob: Job? = null
     private var randomGenerator: Random = Random(System.currentTimeMillis())
+    private var isCurrentMatchPersisted: Boolean = false
 
     init {
         viewModelScope.launch {
@@ -168,7 +181,10 @@ class SnakeGameViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun startGame(tournamentSeed: Long? = null) {
+        finalizeAndSaveMatch()
+        isCurrentMatchPersisted = false
         gameJob?.cancel()
+        adCountdownJob?.cancel()
         val seed = tournamentSeed ?: System.currentTimeMillis()
         randomGenerator = Random(seed)
 
@@ -204,10 +220,16 @@ class SnakeGameViewModel(application: Application) : AndroidViewModel(applicatio
             startTimeMs = System.currentTimeMillis(),
             durationSeconds = 0,
             tournamentSeed = seed,
-            levelUpAnnouncement = "LEVEL 1 • ARENA ${initialGridW}x${initialGridH}"
+            levelUpAnnouncement = "LEVEL 1 • ARENA ${initialGridW}x${initialGridH}",
+            isAdShowing = false,
+            adCountdownSeconds = 5,
+            canReviveWithAd = true,
+            revivesUsed = 0,
+            invulnerableUntilMs = 0L
         )
 
         audioSynthesizer.playSpeedUp()
+        teamAudioManager.onMatchStart()
         triggerHaptic(50)
         startLoop()
     }
@@ -219,13 +241,24 @@ class SnakeGameViewModel(application: Application) : AndroidViewModel(applicatio
         audioSynthesizer.playButtonClick()
     }
 
-    fun changeDirection(newDir: Direction) {
+    fun onGestureDirection(newDir: Direction) {
         val current = _gameState.value
-        if (current.isGameOver || current.isPaused) return
-        if (!current.direction.isOpposite(newDir)) {
+        if (current.isGameOver || current.isPaused || !current.isPlaying) return
+        if (!current.direction.isOpposite(newDir) && current.direction != newDir) {
             _gameState.update { it.copy(nextDirection = newDir) }
-            triggerHaptic(15)
+            audioSynthesizer.playGestureFeedback()
+            triggerHaptic(18)
+            lastGestureDirection.value = newDir
+            clearGestureJob?.cancel()
+            clearGestureJob = viewModelScope.launch {
+                delay(350)
+                lastGestureDirection.value = null
+            }
         }
+    }
+
+    fun changeDirection(newDir: Direction) {
+        onGestureDirection(newDir)
     }
 
     private fun startLoop() {
@@ -275,10 +308,18 @@ class SnakeGameViewModel(application: Application) : AndroidViewModel(applicatio
         val gridH = current.gridHeight
 
         // Check Wall Collision or Wrap Around
+        val isInvulnerable = (System.currentTimeMillis() < current.invulnerableUntilMs)
+
         if (current.wallMode == WallMode.WALL) {
             if (nextX < 0 || nextX >= gridW || nextY < 0 || nextY >= gridH) {
-                handleGameOver(DeathReason.WALL_COLLISION)
-                return
+                if (isInvulnerable) {
+                    // Safe bounce when shielded
+                    nextX = nextX.coerceIn(0, gridW - 1)
+                    nextY = nextY.coerceIn(0, gridH - 1)
+                } else {
+                    handleGameOver(DeathReason.WALL_COLLISION)
+                    return
+                }
             }
         } else {
             // Wall-less Mode: wrap seamlessly through edges
@@ -291,8 +332,10 @@ class SnakeGameViewModel(application: Application) : AndroidViewModel(applicatio
         // Check Self Collision
         val bodyWithoutTail = current.snake.dropLast(1)
         if (bodyWithoutTail.contains(newHead)) {
-            handleGameOver(DeathReason.SELF_COLLISION)
-            return
+            if (!isInvulnerable) {
+                handleGameOver(DeathReason.SELF_COLLISION)
+                return
+            }
         }
 
         val newSnake = mutableListOf(newHead)
@@ -318,6 +361,7 @@ class SnakeGameViewModel(application: Application) : AndroidViewModel(applicatio
             audioSynthesizer.playSpeedUp()
             triggerHaptic(100)
             announcement = "LEVEL $speedLvl: SCREEN EXPANDED (${scaledGridW}x${scaledGridH})!"
+            teamAudioManager.onLevelUp(speedLvl, "${scaledGridW}x${scaledGridH}")
         }
 
         if (ateFood) {
@@ -325,11 +369,13 @@ class SnakeGameViewModel(application: Application) : AndroidViewModel(applicatio
                 newGolden++
                 newScore += (40 * current.scoreMultiplier).toInt()
                 audioSynthesizer.playGoldenApple()
+                teamAudioManager.onAppleEaten(newApples, newScore)
                 triggerHaptic(80)
             } else {
                 newApples++
                 newScore += (10 * current.scoreMultiplier).toInt()
                 audioSynthesizer.playAppleEat()
+                teamAudioManager.onAppleEaten(newApples, newScore)
                 triggerHaptic(40)
             }
 
@@ -382,6 +428,10 @@ class SnakeGameViewModel(application: Application) : AndroidViewModel(applicatio
         val isGolden = randomGenerator.nextFloat() < 0.22f
         val expiration = if (isGolden) System.currentTimeMillis() + 8000L else 0L
 
+        if (isGolden) {
+            teamAudioManager.onGoldenAppleSpawned()
+        }
+
         return Food(
             point = target,
             isGolden = isGolden,
@@ -411,6 +461,8 @@ class SnakeGameViewModel(application: Application) : AndroidViewModel(applicatio
             seed = current.tournamentSeed
         )
 
+        val canRevive = (current.revivesUsed < 5)
+
         _gameState.update {
             it.copy(
                 isGameOver = true,
@@ -418,14 +470,141 @@ class SnakeGameViewModel(application: Application) : AndroidViewModel(applicatio
                 deathReason = reason,
                 durationSeconds = duration,
                 antiCheatToken = token,
-                antiCheatVerified = antiCheatReport.isClean
+                antiCheatVerified = antiCheatReport.isClean,
+                canReviveWithAd = canRevive
             )
         }
 
         audioSynthesizer.playGameOver()
+        teamAudioManager.onGameOver(current.score)
         triggerHaptic(200)
 
-        // Persist to Room
+        if (!canRevive) {
+            finalizeAndSaveMatch()
+        }
+    }
+
+    fun startWatchAdForRevive() {
+        val current = _gameState.value
+        if (!current.canReviveWithAd) return
+        gameJob?.cancel()
+        adCountdownJob?.cancel()
+        _gameState.update {
+            it.copy(
+                isAdShowing = true,
+                adCountdownSeconds = 5
+            )
+        }
+        audioSynthesizer.playButtonClick()
+        triggerHaptic(50)
+
+        adCountdownJob = viewModelScope.launch {
+            for (sec in 5 downTo 1) {
+                _gameState.update { it.copy(adCountdownSeconds = sec) }
+                delay(1000)
+            }
+            _gameState.update { it.copy(adCountdownSeconds = 0) }
+            delay(500)
+            completeAdAndRevive()
+        }
+    }
+
+    fun completeAdAndRevive() {
+        adCountdownJob?.cancel()
+        val current = _gameState.value
+
+        // Reposition snake safely where they died:
+        val gridW = current.gridWidth
+        val gridH = current.gridHeight
+        val currentHead = current.snake.firstOrNull() ?: Point(gridW / 2, gridH / 2)
+
+        // Ensure safe coordinate inside grid bounds
+        val safeHeadX = currentHead.x.coerceIn(1, gridW - 2)
+        val safeHeadY = currentHead.y.coerceIn(1, gridH - 2)
+        val safeHead = Point(safeHeadX, safeHeadY)
+
+        // Determine safe direction pointing towards open space
+        val safeDir = when {
+            safeHeadX <= 2 -> Direction.RIGHT
+            safeHeadX >= gridW - 3 -> Direction.LEFT
+            safeHeadY <= 2 -> Direction.DOWN
+            safeHeadY >= gridH - 3 -> Direction.UP
+            else -> current.direction
+        }
+
+        // Reconstruct safe snake body (trim overlap or self collision)
+        val safeSnake = mutableListOf(safeHead)
+        val targetLen = current.snake.size.coerceIn(3, 10)
+        for (i in 1 until targetLen) {
+            val tailX = (safeHeadX - safeDir.dx * i).coerceIn(0, gridW - 1)
+            val tailY = (safeHeadY - safeDir.dy * i).coerceIn(0, gridH - 1)
+            safeSnake.add(Point(tailX, tailY))
+        }
+
+        // Ensure food is not on top of the snake
+        val safeFood = if (safeSnake.contains(current.food.point)) {
+            spawnFood(safeSnake, gridW, gridH)
+        } else {
+            current.food
+        }
+
+        // Grant 3.5 seconds invulnerability shield
+        val invulnerableUntil = System.currentTimeMillis() + 3500L
+
+        audioSynthesizer.playReviveTone()
+        teamAudioManager.onRevived()
+        triggerHaptic(150)
+
+        _gameState.update {
+            it.copy(
+                snake = safeSnake,
+                direction = safeDir,
+                nextDirection = safeDir,
+                food = safeFood,
+                isPlaying = true,
+                isPaused = false,
+                isGameOver = false,
+                isAdShowing = false,
+                deathReason = null,
+                revivesUsed = it.revivesUsed + 1,
+                invulnerableUntilMs = invulnerableUntil,
+                levelUpAnnouncement = "REVIVED! RUN CONTINUES (${it.score} PTS) • 3s SHIELD"
+            )
+        }
+
+        startLoop()
+    }
+
+    fun dismissAdWithoutRevive() {
+        adCountdownJob?.cancel()
+        _gameState.update { it.copy(isAdShowing = false) }
+        finalizeAndSaveMatch()
+    }
+
+    fun finalizeAndSaveMatch() {
+        val current = _gameState.value
+        if (isCurrentMatchPersisted || (current.score <= 0 && current.applesEaten <= 0)) return
+        isCurrentMatchPersisted = true
+
+        val now = System.currentTimeMillis()
+        val duration = max(1, ((now - current.startTimeMs) / 1000).toInt())
+
+        val antiCheatReport = AntiCheatEngine.isScoreLegitimate(
+            score = current.score,
+            applesEaten = current.applesEaten,
+            movesCount = current.moveCount,
+            durationSeconds = duration
+        )
+
+        val token = AntiCheatEngine.generateVerificationToken(
+            score = current.score,
+            applesEaten = current.applesEaten,
+            goldenApplesEaten = current.goldenApplesEaten,
+            movesCount = current.moveCount,
+            durationSeconds = duration,
+            seed = current.tournamentSeed
+        )
+
         viewModelScope.launch {
             val match = MatchEntity(
                 score = current.score,
@@ -433,7 +612,7 @@ class SnakeGameViewModel(application: Application) : AndroidViewModel(applicatio
                 goldenApplesEaten = current.goldenApplesEaten,
                 speedLevelReached = current.speedLevel,
                 durationSeconds = duration,
-                deathReason = reason.name,
+                deathReason = current.deathReason?.name ?: DeathReason.SURRENDER.name,
                 themeId = _selectedTheme.value.id,
                 wallMode = current.wallMode.name,
                 antiCheatVerified = antiCheatReport.isClean,
@@ -441,7 +620,6 @@ class SnakeGameViewModel(application: Application) : AndroidViewModel(applicatio
             )
             matchDao.insertMatch(match)
 
-            // Update user profile
             val currentProfile = userProfile.value
             val newHighScore = max(currentProfile.highScore, current.score)
             val updatedProfile = currentProfile.copy(
@@ -453,7 +631,6 @@ class SnakeGameViewModel(application: Application) : AndroidViewModel(applicatio
             )
             profileDao.insertOrUpdateProfile(updatedProfile)
 
-            // Submit score to leaderboard
             leaderboardRepo.submitUserScore(
                 playerTag = currentProfile.gamerTag,
                 score = current.score,
@@ -462,6 +639,12 @@ class SnakeGameViewModel(application: Application) : AndroidViewModel(applicatio
                 token = token,
                 isVerified = antiCheatReport.isClean
             )
+        }
+    }
+
+    fun updateAdMobConfig(appId: String, unitId: String) {
+        viewModelScope.launch {
+            profileDao.updateAdMobConfig(appId.trim(), unitId.trim())
         }
     }
 
@@ -509,6 +692,21 @@ class SnakeGameViewModel(application: Application) : AndroidViewModel(applicatio
         viewModelScope.launch {
             matchDao.clearHistory()
         }
+    }
+
+    fun toggleTeamAudio() {
+        teamAudioManager.toggleTeamAudio()
+        triggerHaptic(25)
+    }
+
+    fun sendTeamCallout(type: TeamCalloutType) {
+        teamAudioManager.sendUserCallout(type, userProfile.value.gamerTag)
+        triggerHaptic(25)
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        teamAudioManager.destroy()
     }
 
     private fun triggerHaptic(durationMs: Long) {

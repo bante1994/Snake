@@ -81,20 +81,28 @@ fun GameCanvas(
         label = "goldenPulse"
     )
 
-    val boardAspectRatio = remember(gameState.gridWidth, gameState.gridHeight) {
-        (gameState.gridWidth.toFloat() / gameState.gridHeight.toFloat()).coerceIn(0.75f, 1.2f)
-    }
+    val shieldPulse by infiniteTransition.animateFloat(
+        initialValue = 0.4f,
+        targetValue = 0.95f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(300, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "shieldPulse"
+    )
+
+    val isShieldActive = gameState.invulnerableUntilMs > System.currentTimeMillis()
 
     Box(
         modifier = modifier
-            .fillMaxWidth()
-            .aspectRatio(boardAspectRatio)
+            .fillMaxSize()
             .shadow(12.dp, RoundedCornerShape(12.dp))
             .clip(RoundedCornerShape(12.dp))
             .background(theme.boardBackground)
             .pointerInput(gameState.isPlaying) {
                 var totalDx = 0f
                 var totalDy = 0f
+                val swipeThreshold = 24f
                 detectDragGestures(
                     onDragStart = {
                         totalDx = 0f
@@ -104,13 +112,24 @@ fun GameCanvas(
                         change.consume()
                         totalDx += dragAmount.x
                         totalDy += dragAmount.y
+                        if (kotlin.math.abs(totalDx) > swipeThreshold || kotlin.math.abs(totalDy) > swipeThreshold) {
+                            if (kotlin.math.abs(totalDx) > kotlin.math.abs(totalDy)) {
+                                if (totalDx > 0) onDirectionChange(Direction.RIGHT)
+                                else onDirectionChange(Direction.LEFT)
+                            } else {
+                                if (totalDy > 0) onDirectionChange(Direction.DOWN)
+                                else onDirectionChange(Direction.UP)
+                            }
+                            totalDx = 0f
+                            totalDy = 0f
+                        }
                     },
                     onDragEnd = {
-                        val minDistance = 24f
-                        if (abs(totalDx) > abs(totalDy) && abs(totalDx) > minDistance) {
+                        val minDistance = 18f
+                        if (kotlin.math.abs(totalDx) > kotlin.math.abs(totalDy) && kotlin.math.abs(totalDx) > minDistance) {
                             if (totalDx > 0) onDirectionChange(Direction.RIGHT)
                             else onDirectionChange(Direction.LEFT)
-                        } else if (abs(totalDy) > minDistance) {
+                        } else if (kotlin.math.abs(totalDy) > minDistance) {
                             if (totalDy > 0) onDirectionChange(Direction.DOWN)
                             else onDirectionChange(Direction.UP)
                         }
@@ -136,7 +155,14 @@ fun GameCanvas(
                 drawFood(gameState.food, cellSize, theme, goldenPulse)
 
                 // 3. Draw Snake Body & Head
-                drawSnake(gameState.snake, gameState.direction, cellSize, theme)
+                drawSnake(
+                    snake = gameState.snake,
+                    direction = gameState.direction,
+                    cellSize = cellSize,
+                    theme = theme,
+                    isShieldActive = isShieldActive,
+                    shieldPulse = shieldPulse
+                )
 
                 // 4. Draw Active Perimeter (Wall vs Wall-Less)
                 drawPerimeter(boardW, boardH, gameState.wallMode, theme)
@@ -145,76 +171,6 @@ fun GameCanvas(
                 if (scanlinesEnabled && theme.crtScanlines) {
                     drawCrtOverlay(boardW, boardH)
                 }
-            }
-        }
-
-        // Animated Level Up & Screen Size Expansion Banner
-        AnimatedVisibility(
-            visible = !gameState.levelUpAnnouncement.isNullOrBlank(),
-            enter = fadeIn() + slideInVertically { -it },
-            exit = fadeOut() + slideOutVertically { -it },
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .padding(top = 10.dp)
-        ) {
-            Surface(
-                color = theme.boardBackground.copy(alpha = 0.94f),
-                shape = RoundedCornerShape(20.dp),
-                border = BorderStroke(1.5.dp, theme.accent),
-                shadowElevation = 8.dp
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.ZoomOutMap,
-                        contentDescription = null,
-                        tint = theme.snakeHead,
-                        modifier = Modifier.size(14.dp)
-                    )
-                    Text(
-                        text = gameState.levelUpAnnouncement ?: "",
-                        color = theme.hudText,
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.ExtraBold,
-                        fontSize = 10.sp
-                    )
-                }
-            }
-        }
-
-        // Active Wall Mode pill indicator in bottom-left corner
-        Surface(
-            color = theme.background.copy(alpha = 0.85f),
-            shape = RoundedCornerShape(6.dp),
-            border = BorderStroke(
-                1.dp,
-                if (gameState.wallMode == WallMode.WALL) theme.accent.copy(alpha = 0.6f) else theme.snakeHead.copy(alpha = 0.6f)
-            ),
-            modifier = Modifier
-                .align(Alignment.BottomStart)
-                .padding(8.dp)
-        ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                Icon(
-                    imageVector = if (gameState.wallMode == WallMode.WALL) Icons.Default.Security else Icons.Default.AllInclusive,
-                    contentDescription = null,
-                    tint = if (gameState.wallMode == WallMode.WALL) theme.accent else theme.snakeHead,
-                    modifier = Modifier.size(11.dp)
-                )
-                Text(
-                    text = "${gameState.wallMode.label} • ${gameState.gridWidth}x${gameState.gridHeight}",
-                    color = theme.hudText.copy(alpha = 0.85f),
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 8.sp,
-                    fontWeight = FontWeight.Bold
-                )
             }
         }
     }
@@ -342,7 +298,9 @@ private fun DrawScope.drawSnake(
     snake: List<Point>,
     direction: Direction,
     cellSize: Float,
-    theme: RetroTheme
+    theme: RetroTheme,
+    isShieldActive: Boolean = false,
+    shieldPulse: Float = 1f
 ) {
     if (snake.isEmpty()) return
 
@@ -355,6 +313,16 @@ private fun DrawScope.drawSnake(
         val segment = snake[i]
         val x = segment.x * cellSize + pad
         val y = segment.y * cellSize + pad
+
+        if (isShieldActive) {
+            // Shield aura for body
+            drawRoundRect(
+                color = theme.accent.copy(alpha = 0.25f * shieldPulse),
+                topLeft = Offset(x - pad * 0.5f, y - pad * 0.5f),
+                size = Size(segSize + pad, segSize + pad),
+                cornerRadius = bodyCorner
+            )
+        }
 
         val alphaFade = 1f - (i.toFloat() / (snake.size * 1.8f)).coerceIn(0f, 0.4f)
         drawRoundRect(
@@ -378,6 +346,22 @@ private fun DrawScope.drawSnake(
     val head = snake.first()
     val headX = head.x * cellSize + pad
     val headY = head.y * cellSize + pad
+
+    if (isShieldActive) {
+        // Shield aura for Head
+        drawCircle(
+            color = theme.accent.copy(alpha = 0.35f * shieldPulse),
+            radius = cellSize * 0.7f,
+            center = Offset(head.x * cellSize + cellSize / 2f, head.y * cellSize + cellSize / 2f)
+        )
+        drawCircle(
+            color = theme.accent.copy(alpha = 0.8f * shieldPulse),
+            radius = cellSize * 0.65f,
+            center = Offset(head.x * cellSize + cellSize / 2f, head.y * cellSize + cellSize / 2f),
+            style = Stroke(width = 2.5f)
+        )
+    }
+
     drawRoundRect(
         color = theme.snakeHead,
         topLeft = Offset(headX, headY),

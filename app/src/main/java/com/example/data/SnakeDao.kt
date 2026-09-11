@@ -47,4 +47,7 @@ interface ProfileDao {
 
     @Query("UPDATE user_profile SET soundEnabled = :sound, vibrationEnabled = :vibe, scanlinesEnabled = :scanlines WHERE id = 1")
     suspend fun updateSettings(sound: Boolean, vibe: Boolean, scanlines: Boolean)
+
+    @Query("UPDATE user_profile SET adMobAppId = :appId, adMobRewardedUnitId = :unitId WHERE id = 1")
+    suspend fun updateAdMobConfig(appId: String, unitId: String)
 }
