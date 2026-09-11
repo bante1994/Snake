@@ -22,6 +22,6 @@ dependencyResolutionManagement {
   }
 }
 
-rootProject.name = "Retro Snake"
+rootProject.name = "AROOTX"
 
 include(":app")

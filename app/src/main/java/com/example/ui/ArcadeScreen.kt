@@ -388,7 +388,7 @@ fun StartGameOverlay(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Text(
-                text = "RETRO SNAKE",
+                text = "AROOTX",
                 color = theme.snakeHead,
                 fontSize = 24.sp,
                 fontFamily = FontFamily.Monospace,
