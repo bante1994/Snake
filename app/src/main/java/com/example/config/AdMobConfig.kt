@@ -26,7 +26,7 @@ object AdMobConfig {
      * YOUR ADMOB PUBLISHER ID (w pub key):
      * Replace with your publisher ID: pub-XXXXXXXXXXXXXXXX
      */
-    const val ADMOB_PUBLISHER_ID: String = "pub-3940256099942544"
+    const val ADMOB_PUBLISHER_ID: String = "pub-6069047874277520"
 
     /**
      * YOUR ADMOB APPLICATION ID:
@@ -38,7 +38,7 @@ object AdMobConfig {
      * YOUR REWARDED AD UNIT ID (Used for reviving after crash):
      * Replace with your Rewarded Ad Unit ID: ca-app-pub-XXXXXXXXXXXXXXXX/XXXXXXXXXX
      */
-    const val ADMOB_REWARDED_AD_UNIT_ID: String = "ca-app-pub-3940256099942544/5224354917"
+    const val ADMOB_REWARDED_AD_UNIT_ID: String = "ca-app-pub-6069047874277520/8238945998"
 
     /**
      * Google's official sample rewarded ad unit for safe testing and fallback
